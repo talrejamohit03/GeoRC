@@ -1,5 +1,37 @@
 # GeoRC
 
+## Installation
+
+### Prerequisites
+
+1. **Install Miniforge** (lightweight conda distribution):
+   
+   Visit [Miniforge GitHub](https://github.com/conda-forge/miniforge) and download the appropriate installer for your OS (macOS, Linux, or Windows).
+   
+   After downloading, run the installer:
+   ```bash
+   bash Miniforge3-*.sh
+   ```
+   
+   Follow the prompts and accept the default settings.
+
+2. **Create and activate a conda environment**:
+   ```bash
+   conda create -n georc python=3.10
+   conda activate georc
+   ```
+
+3. **Install dependencies from requirements.txt**:
+   ```bash
+   pip install -r env/requirements.txt
+   ```
+
+   The requirements.txt file includes all necessary packages:
+   - **PyTorch & Vision**: torch, torchvision, numpy, pillow
+   - **Model Libraries**: transformers, bitsandbytes, accelerate
+   - **API Clients**: google-genai, azure-ai-vision-imageanalysis, openai, groq
+   - **Utilities**: matplotlib, cartopy
+
 ## Dataset
 
 The GeoRC dataset is available on Hugging Face. Download it using the following instructions:

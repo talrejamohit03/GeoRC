@@ -1,0 +1,13 @@
+torch
+numpy
+pillow
+transformers
+bitsandbytes
+accelerate
+torchvision
+groq
+matplotlib
+google-genai
+azure-ai-vision-imageanalysis
+openai
+cartopy
