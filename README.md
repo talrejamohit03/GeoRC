@@ -155,7 +155,7 @@ python score.py --mode <scoring_mode> --llm_model <model_name> --challenge_path 
 
 - `--challenge_path`: Path to directory containing challenges to evaluate
   - Can be a single challenge directory or parent directory with multiple challenges
-  - Must contain subdirectories with `Human_Chain_3.txt` (ground truth) and candidate files
+  - Must contain subdirectories with `Human_Expert_*.txt` (ground truth) and candidate files
 
 ### Optional Arguments
 
@@ -204,7 +204,7 @@ python score.py --mode key_points --llm_model meta-llama/Llama-2-7b --challenge_
 
 **Bipartite LLM-as-Judge Mode:**
 ```bash
-python score.py --mode bipartite --llm_model mistralai/Mistral-7B --challenge_path ./challenges --suffix my_eval
+python score.py --mode bipartite --llm_model qwen_llm --challenge_path ./GeoRC_dataset --suffix my_eval
 ```
 
 **VLM Judge Mode (Visual + Reasoning):**
@@ -236,7 +236,7 @@ python score.py --mode vlm_judge --llm_model meta-llama/Llama-2-7b --vlm_model_n
 
 ### Ground Truth Format
 
-Challenges must contain a file named `Human_Chain_3.txt` with the ground truth reasoning chain. The script evaluates 5 rounds by default (matches with files `{pattern}1.txt` through `{pattern}5.txt`).
+Challenges must contain one or more `Human_Expert_*.txt` files with the ground truth reasoning chains. Each candidate is scored against every expert file. The script evaluates 5 rounds by default (matches with files `{pattern}1.txt` through `{pattern}5.txt`).
 
 Example directory structure:
 ```
@@ -247,7 +247,7 @@ GeoRC_dataset/
 │   ├── challenge_1_3.png
 │   ├── challenge_1_4.png
 │   ├── challenge_1_5.png
-│   ├── Human_Chain_3.txt (ground truth)
+│   ├── Human_Expert_1.txt (ground truth)
 │   ├── candidate_reasoning_chain_1.txt
 │   ├── candidate_reasoning_chain_2.txt
 │   └── ...
@@ -265,6 +265,7 @@ Example output:
     {
         "challenge": "challenge_1",
         "round": 1,
+        "expert": "Human_Expert_1.txt",
         "precision": 0.85,
         "recall": 0.78,
         "f1": 0.81
@@ -272,6 +273,7 @@ Example output:
     {
         "challenge": "challenge_1",
         "round": 2,
+        "expert": "Human_Expert_1.txt",
         "precision": 0.92,
         "recall": 0.88,
         "f1": 0.90

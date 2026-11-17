@@ -4,12 +4,8 @@ import json
 import re
 from typing import Dict, List
 from abc import ABC, abstractmethod
-from sentence_transformers import SentenceTransformer
 from src.hugging_face.hf_completion_utils import get_processor_and_model
 from src.llm.parse_chains import parse_reasoning_chains
-from src.llm.llm_scoring import match_atomic_keys_orig, match_atomic_keys_embeddings
-from src.vlm.correctness_score import get_correctness_score_granular
-from src.vllm.vllm_completion_util import get_model
 
 class BaseScorer(ABC):
     """Abstract base class for all scoring strategies."""
@@ -43,12 +39,13 @@ class EvaluationPipeline:
         self.results = []
 
     def run(self, challenge_path: str, pattern: str, rounds: int = 5):
-        dirs = sorted([d for d in os.listdir(challenge_path) 
-                       if os.path.isdir(os.path.join(challenge_path, d))])
+        dirs = sorted([(d, f) for d in os.listdir(challenge_path) 
+                       if os.path.isdir(os.path.join(challenge_path, d))
+                       for f in os.listdir(os.path.join(challenge_path, d)) if f.startswith("Human_Expert_")])
 
-        for dir_name in dirs:
+        for dir_name, gt_name in dirs:
             dir_path = os.path.join(challenge_path, dir_name)
-            gt_path = os.path.join(dir_path, "Human_Chain_3.txt")
+            gt_path = os.path.join(dir_path, gt_name)
             
             if not os.path.exists(gt_path):
                 continue
@@ -70,6 +67,7 @@ class EvaluationPipeline:
                 result = {
                     "challenge": dir_name,
                     "round": round_num,
+                    "expert": gt_name,
                     **metrics
                 }
                 self.results.append(result)
@@ -90,51 +88,49 @@ class BipartiteLLMScorer(BaseScorer):
 
     def _extract_points(self, text: str) -> List[str]:
         """Cleans and splits reasoning chains into individual atomic points."""
-        # Handles various formats: bullet points, numbered lists, or newlines
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        # Remove common LLM prefixes/noise
-        cleaned = [re.sub(r'^(\d+\.|\*|-)\s*', '', p).strip() for p in lines]
-        return [p for p in cleaned if len(p) > 5] # Filter out tiny fragments
+        return [line for line in text.split("\n") if line.strip()]
 
     def _get_llm_score(self, first_chain: str, second_point: str, metric_type: str) -> float:
         """Calls the LLM to score a single point against a reference chain."""
-        prompt = f"""Provided below are two reasoning chains, the first following \"FIRST REASONING CHAIN:\" which is the ground truth
-        and the second following \"SECOND REASONING CHAIN:\" which is a candidate chain. 
-        These represent reasoning chains for determining the location of a photo and these chains make statements about scene attributes such as, but not limited to infrastructure, architecture, 
-        vegetation and agriculture, geology, topological features, cultural clues, vehicles, and language signs. Do not restrict your grading to only these attributes and these attributes can overlap with each other.
-        The first reasoning chain has multiple statement/points seperated by the "||" delimeter. 
-        The second reasoning chain only contains one statement/point.
-        Your task is to assign a similarity score (0–100) based **only on the SECOND CHAIN's content**, according to how well it aligns with any statement in the first chain in terms of both:
-        - The **evidence** being discussed, and 
-        - The **logical reasoning** or interpretation applied to that evidence.
+        prompt = f"""
+Provided below are two reasoning chains, the first following \"FIRST REASONING CHAIN:\" which is the ground truth
+and the second following \"SECOND REASONING CHAIN:\" which is a candidate chain. 
+These represent reasoning chains for determining the location of a photo and these chains make statements about scene attributes such as, but not limited to infrastructure, architecture, 
+vegetation and agriculture, geology, topological features, cultural clues, vehicles, and language signs. Do not restrict your grading to only these attributes and these attributes can overlap with each other.
+The first reasoning chain has multiple statement/points seperated by the "||" delimeter. 
+The second reasoning chain only contains one statement/point.
+Your task is to assign a similarity score (0–100) based **only on the SECOND CHAIN's content**, according to how well it aligns with any statement in the first chain in terms of both:
+- The **evidence** being discussed, and 
+- The **logical reasoning** or interpretation applied to that evidence.
 
-        STRICT SCORING RULES:
-        1. Only award points if there is logical evidence in the first reasoning chain that supports the second chain.
-        - The second chain does not need to reflect every point in the first chain.
-        - A single overlapping detail (e.g., both mention “wooden poles”) does not justify a high score, you need to consider all evidence details from the second chain.  
-        - The second chain must align in **most or all** relevant evidence and reasoning dimensions of the matched point to score highly.
+STRICT SCORING RULES:
+1. Only award points if there is logical evidence in the first reasoning chain that supports the second chain.
+- The second chain does not need to reflect every point in the first chain.
+- A single overlapping detail (e.g., both mention “wooden poles”) does not justify a high score, you need to consider all evidence details from the second chain.  
+- The second chain must align in **most or all** relevant evidence and reasoning dimensions of the matched point to score highly.
 
-        2. Do NOT give any credit for:
-        - Overlaps that are only geographic, thematic, or plausible but unsupported by direct evidence.  
-        - If the overlap is merely “regionally plausible” or “mentions the same area,” but the specific evidence type is absent in the first chain.  
-        - Thematic alignment without shared evidence != partial credit.
+2. Do NOT give any credit for:
+- Overlaps that are only geographic, thematic, or plausible but unsupported by direct evidence.  
+- If the overlap is merely “regionally plausible” or “mentions the same area,” but the specific evidence type is absent in the first chain.  
+- Thematic alignment without shared evidence != partial credit.
 
-        3. Score 100 if the second chain has complete overlap with any of the points in the first reasoning chain, using the SAME evidence type and SAME logical reasoning.
+3. Score 100 if the second chain has complete overlap with any of the points in the first reasoning chain, using the SAME evidence type and SAME logical reasoning.
 
-        4. Score 0 if:
-        - There is no evidence support from the first reasoning chain that supports the second chain.
-        - The overlap is purely thematic (for example, both mention the Philippines but discuss different kinds of evidence with no overlap).
-        - If the chain is entirely unrelated in both evidence and logic.
+4. Score 0 if:
+- There is no evidence support from the first reasoning chain that supports the second chain.
+- The overlap is purely thematic (for example, both mention the Philippines but discuss different kinds of evidence with no overlap).
+- If the chain is entirely unrelated in both evidence and logic.
 
-        5. Intermediate scores (1–99) should be given when:
-        - There are evidence in the first reasoning chain (without inferring based on external knowledge) that partially support the second reasoning chain but may not have a direct overlap.
+5. Intermediate scores (1–99) should be given when:
+- There are evidence in the first reasoning chain (without inferring based on external knowledge) that partially support the second reasoning chain but may not have a direct overlap.
 
-        6. You should not grade based on whether the second chain includes all the evidence or reasoning of the first chain.
+6. You should not grade based on whether the second chain includes all the evidence or reasoning of the first chain.
 
-        Please respond **only** with a JSON object. No explanation. Example format: {"precision": <score>}.
-        FIRST REASONING CHAIN:{first_chain}
-        SECOND REASONING CHAIN: {second_point}
-        """
+        Please respond **only** with a JSON object. No explanation. Example format: {{"{metric_type}": <score>}}.
+        FIRST REASONING CHAIN:
+        {first_chain}
+        SECOND REASONING CHAIN:
+        {second_point}"""
 
         # Using the text_to_text utility from your original script
         from src.hugging_face.hf_completion_utils import text_to_text
@@ -281,8 +277,8 @@ def main():
     try:
         scorer = ScorerFactory.get_scorer(
             args.mode, 
-            model=llm, 
-            tokenizer=tokenizer, 
+            llm_model=llm,
+            llm_tokenizer=tokenizer,
             st_model=st_model
         )
     except ValueError as e:
