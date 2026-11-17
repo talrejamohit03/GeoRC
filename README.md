@@ -280,3 +280,14 @@ Example output:
     }
 ]
 ```
+
+## Country Accuracy Script
+
+`src/llm/accuracy_calculator.py` measures geolocation accuracy: an LLM judge is given each candidate chain and the true country of the round (read from `src/llm/ground_truth_countries.json`, the Nominatim reverse geocoding of each round's coordinates; a round missing from that file is geocoded online) and answers whether the chain guesses that country.
+
+```bash
+python -m src.llm.accuracy_calculator qwen_llm ./GeoRC_dataset candidate_reasoning_chain_gemma3_12b_ gemma_acc ./cache
+python -m src.llm.accuracy_calculator qwen_llm ./GeoRC_dataset 1 expert1_acc ./cache --human
+```
+
+Arguments, in order: judge model, dataset path, candidate file pattern (or the expert number with `--human`, which scores `Human_Expert_{n}.txt` on the 30 challenges written by all three experts), output suffix and cache directory. Results are written to `vlm_geolocation_scores_{suffix}.txt` with one `correct_guess` (0 or 1) per round; the accuracy is their mean.

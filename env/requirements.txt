@@ -11,3 +11,4 @@ google-genai
 azure-ai-vision-imageanalysis
 openai
 cartopy
+geopy
